@@ -1,0 +1,4 @@
+#!/bin/sh
+# Adapt this fragment in the board vendor rcS; do not put credentials here.
+/bin/wifi_manager &
+sh /data/xiaov-autostart.sh &

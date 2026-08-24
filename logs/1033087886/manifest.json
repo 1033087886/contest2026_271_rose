@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "team_id": "contest2026_271_rose",
+  "github_login": "1033087886",
+  "generator": "codex-desktop-partial-export@1.0",
+  "updated_at": "2026-08-24T07:40:51.2988507Z",
+  "sessions": [
+    {
+      "session_id": "019fea6b-b67a-74d1-bd25-8e6a5eae2eac",
+      "tool": "codex",
+      "started_at": "2026-08-24T05:51:00.341Z",
+      "last_event_at": "2026-08-24T07:40:47.758Z",
+      "event_count": 194,
+      "file_path": "logs/1033087886/2026-08-24/codex__019fea6b-b67a-74d1-bd25-8e6a5eae2eac.jsonl",
+      "collection_mode": "vscode_extension_partial",
+      "data_completeness_warning": "Codex Desktop session was outside a .repo openvela workspace, so the official CLI hook privacy gate did not collect it. This export contains only the real contest-submission portion beginning 2026-08-24T05:51:00Z; internal reasoning and earlier credential-bearing hardware sessions are intentionally excluded.",
+      "health": "degraded"
+    }
+  ]
+}

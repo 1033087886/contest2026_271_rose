@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+*.egg-info/
+build/
+artifacts/
+models/
+输入/
+*.img
+*.bin
+*.fex
+*.pcm
+*.wav
+!app/xiaov_voice_assistant/assets/xiaov-wake-ack.wav

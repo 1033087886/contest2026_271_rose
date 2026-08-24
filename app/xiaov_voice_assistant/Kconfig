@@ -1,0 +1,353 @@
+config EXAMPLES_XIAOV
+	tristate "Xiao V voice assistant"
+	default n
+	depends on MEDIA
+	depends on NETUTILS_LIBWEBSOCKETS
+	---help---
+		Build the Xiao V portable core, compile probe, Media Framework
+		adapter, persistent daemon, bounded conversation UI and protocol-v1
+		libwebsockets client as an NSH application.
+
+if EXAMPLES_XIAOV
+
+config EXAMPLES_XIAOV_PROGNAME
+	string "Program name"
+	default "xiaov"
+
+config EXAMPLES_XIAOV_PRIORITY
+	int "Xiao V task priority"
+	default 100
+
+config EXAMPLES_XIAOV_STACKSIZE
+	int "Xiao V task stack size"
+	default 16384
+
+choice
+	prompt "Xiao V capture and TTS audio backend"
+	default EXAMPLES_XIAOV_AUDIO_ALSA if COMPONENTS_AW_ALSA_UTILS
+	default EXAMPLES_XIAOV_AUDIO_MEDIA_FRAMEWORK
+
+config EXAMPLES_XIAOV_AUDIO_ALSA
+	bool "Allwinner ALSA (DShanPi native)"
+	depends on COMPONENTS_AW_ALSA_UTILS
+	---help---
+		Use the R528 ALSA devices proven by the board demo. Capture is
+		48 kHz stereo and is low-pass filtered, mixed, and decimated to
+		16 kHz mono. TTS is interpolated back to 48 kHz stereo.
+
+config EXAMPLES_XIAOV_AUDIO_MEDIA_FRAMEWORK
+	bool "openvela Media Framework"
+	---help---
+		Use media_recorder/media_player at 16 kHz mono. This requires a
+		working Media Framework service on the target image.
+
+endchoice
+
+config EXAMPLES_XIAOV_ALSA_CAPTURE_DEVICE
+	string "ALSA capture device"
+	default "hw:snddmic"
+	depends on EXAMPLES_XIAOV_AUDIO_ALSA
+
+config EXAMPLES_XIAOV_ALSA_PLAYBACK_DEVICE
+	string "ALSA playback device"
+	default "hw:audiocodec"
+	depends on EXAMPLES_XIAOV_AUDIO_ALSA
+
+config EXAMPLES_XIAOV_KWS
+	bool "Enable on-device TFLite Micro wake-word detection"
+	default y
+	depends on TFLITEMICRO
+	---help---
+		Run the embedded, licensed int8 KWS model over the always-on 16 kHz
+		capture stream while the service is in standby. Only model wake classes
+		can dispatch USER_TRIGGER; decoded or typed command text is never used
+		as a wake substitute.
+
+if EXAMPLES_XIAOV_KWS
+
+config EXAMPLES_XIAOV_WAKE_PROMPT_PATH
+	string "Wake acknowledgement WAV path"
+	default "/data/xiaov-wake-ack.wav"
+	depends on EXAMPLES_XIAOV_AUDIO_ALSA
+	---help---
+		PCM16, mono, 16 kHz WAV spoken after a local KWS trigger. Capture is
+		fully stopped before this file is played and starts again afterwards,
+		so the acknowledgement is not uploaded as part of the user request.
+
+config EXAMPLES_XIAOV_KWS_TENSOR_ARENA_BYTES
+	int "KWS TFLite Micro tensor arena bytes"
+	default 131072
+	range 65536 262144
+
+config EXAMPLES_XIAOV_KWS_SCORE_THRESHOLD_Q15
+	int "KWS wake score threshold (Q15)"
+	default 28672
+	range 1 32767
+	---help---
+		28672 is calibrated with the production adaptive gain, raw-PCM VAD,
+		and adjacent-window feature selection. On the fixed 447-clip corpus
+		it reaches 170/177 wake recall with 4/270 false accepts; all four human
+		and board-microphone regression clips trigger at this threshold.
+
+config EXAMPLES_XIAOV_KWS_CONSECUTIVE_HITS
+	int "KWS consecutive qualifying windows"
+	default 1
+	range 1 8
+
+config EXAMPLES_XIAOV_KWS_CAPTURE_TARGET_PEAK
+	int "KWS low-level capture target peak"
+	default 20000
+	range 1 32767
+	---help---
+		Raise each quiet 20 millisecond microphone block toward this PCM16
+		peak before KWS feature extraction. The VAD uses unamplified PCM so
+		room noise does not hold the expensive inference path open. Blocks
+		already above the target are left unchanged.
+
+config EXAMPLES_XIAOV_KWS_CAPTURE_MAX_GAIN_Q8
+	int "KWS maximum capture gain (Q8)"
+	default 768
+	range 256 2048
+	---help---
+		Maximum software microphone gain, where 256 is 1x and 768 is 3x.
+		The peak target prevents already-loud input from being amplified.
+
+config EXAMPLES_XIAOV_KWS_COOLDOWN_MS
+	int "KWS retrigger cooldown in milliseconds"
+	default 2000
+	range 0 30000
+
+config EXAMPLES_XIAOV_KWS_VAD_HOLD_MS
+	int "KWS inference hold after VAD closes (milliseconds)"
+	default 2500
+	range 0 10000
+	---help---
+		Keep KWS inference enabled after the VAD hangover closes. The
+		streaming frontend always advances, so the wake-word head and the
+		model's 99-frame context remain intact while idle Invoke calls are
+		skipped.
+
+config EXAMPLES_XIAOV_KWS_TRACE_SCORES
+	bool "Log every scored KWS window to the console"
+	default n
+	---help---
+		Print the score, output index, decision and input feature spread
+		for each window the model actually scores. Diagnostic only: the
+		wake model emits a window every 200 ms and the feature snapshot
+		scans all 2376 input elements per inference, so this is far too
+		noisy and too costly to ship.
+
+		Enable it to tell a genuine wake miss apart from speech that was
+		simply too quiet. feat_mean_q4 below -1929 means the window could
+		not have scored regardless of the firmware, because the model's
+		firing cliff sits there; above it, a miss is worth investigating.
+
+config EXAMPLES_XIAOV_KWS_VAD_FALLBACK
+	bool "Wake on sustained VAD speech when KWS misses"
+	default n
+	---help---
+		Use sustained speech as a functional fallback when the wake-word
+		model does not trigger. Any continuous speech can wake the assistant,
+		so this trades false accepts for usable voice interaction.
+
+		Off by default now that the wake model works: it was added when the
+		model never triggered at all, to keep the device usable. Board
+		measurement on rc17 shows the cost of keeping it. The model scored
+		32255 against the then-current threshold, yet triggers stayed at 0 because
+		the fallback claimed the shared kws_wake_event_posted latch first and
+		locked the model out. Continuous speech reaches 110 frames sooner
+		than the model can produce a qualifying window, so the
+		frame threshold alone cannot order them. Enabling this hides whether
+		the wake model is working, which is a worse failure than a missed
+		wake.
+
+config EXAMPLES_XIAOV_KWS_VAD_FALLBACK_FRAMES
+	int "Speech frames required for VAD fallback wake"
+	default 110
+	range 5 400
+	depends on EXAMPLES_XIAOV_KWS_VAD_FALLBACK
+	---help---
+		Count actual speech frames inside one VAD-active segment. Each frame
+		is 20 milliseconds, and brief pauses are tolerated by the 500
+		millisecond VAD hangover. The command route never uses this fallback.
+
+		This must stay above the wake model's own decision latency, or the
+		fallback wakes the device before the model can ever rule. The model
+		needs a 1985 millisecond feature context plus a qualifying wake window
+		on the 400 millisecond schedule, so a cold verdict arrives in roughly
+		2200 milliseconds. 110 frames is 2200 milliseconds, which lets the model
+		answer first and keeps the
+		fallback as a genuine backstop. Board measurement at the former
+		default of 10 frames: triggers=0, max_score_q15=0, vad_fallback=6 --
+		the model never produced a score.
+
+config EXAMPLES_XIAOV_OFFLINE_COMMANDS
+	bool "Enable acoustic offline command execution"
+	default y
+	---help---
+		Resolve only acoustic model class indices 3 through 18 into typed
+		device actions. No decoded or typed text is accepted as a substitute.
+		Commands lacking parameters or authoritative local data explicitly
+		require a cloud turn instead of reporting false local success.
+
+config EXAMPLES_XIAOV_OFFLINE_VOLUME_STEP_PERCENT
+	int "Offline volume command step (percent)"
+	default 10
+	range 1 50
+	depends on EXAMPLES_XIAOV_OFFLINE_COMMANDS
+
+config EXAMPLES_XIAOV_OFFLINE_COMMAND_THRESHOLD_Q15
+	int "Offline command score threshold (Q15)"
+	default 27520
+	range 1 32767
+	depends on EXAMPLES_XIAOV_OFFLINE_COMMANDS
+
+config EXAMPLES_XIAOV_OFFLINE_COMMAND_CONSECUTIVE_HITS
+	int "Offline command consecutive matching windows"
+	default 2
+	range 1 4
+	depends on EXAMPLES_XIAOV_OFFLINE_COMMANDS
+
+config EXAMPLES_XIAOV_OFFLINE_COMMAND_WINDOW_MS
+	int "Offline command listening window (milliseconds)"
+	default 6000
+	range 3000 15000
+	depends on EXAMPLES_XIAOV_OFFLINE_COMMANDS
+
+endif
+
+config EXAMPLES_XIAOV_MEDIA_WORKER_STACKSIZE
+	int "Media worker stack size"
+	default 16384
+	range 8192 65536
+
+config EXAMPLES_XIAOV_MUSIC_WORKER_STACKSIZE
+	int "Music worker stack size"
+	default 16384
+	range 8192 65536
+	---help---
+		Stack for the serialized Media Framework worker that owns local and
+		HTTP music playback, prompt tones, and media focus callbacks.
+
+config EXAMPLES_XIAOV_MUSIC_COMMAND_TIMEOUT_MS
+	int "Music command completion timeout in milliseconds"
+	default 5000
+	range 1000 30000
+	---help---
+		Hard upper bound for a gateway media.command synchronous wait,
+		including time spent executing in the Media Framework worker.
+
+config EXAMPLES_XIAOV_MUSIC_DEFAULT_SOURCE
+	string "Default local music source"
+	default "/data/xiaov-demo.wav"
+	---help---
+		Absolute PCM16 mono 16 kHz WAV path used by the local Play control
+		and by a cold offline media-play command.
+
+config EXAMPLES_XIAOV_LVGL
+	bool "Enable Xiao V LVGL conversation UI"
+	default y
+	depends on GRAPHICS_LVGL && LV_USE_NUTTX
+	---help---
+		Run the Xiao V status, conversation and touch controls on a dedicated
+		LVGL worker. When disabled, the same bounded model logs to NSH.
+
+config EXAMPLES_XIAOV_UI_WORKER_STACKSIZE
+	int "Xiao V UI worker stack size"
+	default 36864
+	range 16384 65536
+
+config EXAMPLES_XIAOV_INPUT_DEVPATH
+	string "Touchscreen device path"
+	default "/dev/input0"
+	depends on EXAMPLES_XIAOV_LVGL && INPUT_TOUCHSCREEN
+
+config EXAMPLES_XIAOV_FRAMEBUFFER_DEVPATH
+	string "Framebuffer device path"
+	default "/dev/fb0"
+	---help---
+		Framebuffer whose FBIOSET_POWER operation controls LCD brightness.
+
+config EXAMPLES_XIAOV_ACTIVE_BRIGHTNESS
+	int "Active LCD brightness"
+	default 255
+	range 0 255
+
+config EXAMPLES_XIAOV_STANDBY_BRIGHTNESS
+	int "Standby LCD brightness"
+	default 16
+	range 0 255
+
+config EXAMPLES_XIAOV_PLAYBACK_QUEUE_FRAMES
+	int "Bounded TTS playback queue frames"
+	default 64
+	range 8 80
+
+config EXAMPLES_XIAOV_TOKEN_PATH
+	string "Gateway token file"
+	default "/data/xiaov.token"
+	---help---
+		First line is sent as the session.start token. Must live on a
+		writable mount: DShanPi mounts /etc as read-only romfs, so a path
+		under /etc cannot be provisioned from the device shell.
+
+config EXAMPLES_XIAOV_CA_BUNDLE_PATH
+	string "CA bundle for wss:// connections"
+	default "/resource/etc/ssl/curl/ca-certificates.crt"
+	---help---
+		Passed to libwebsockets as client_ssl_ca_filepath when the tls
+		argument is used. lws otherwise looks under /etc/ssl/curl, which
+		holds no certs on DShanPi; the bundle ships in the romfs resource
+		partition. Note the board RTC starts at 1970, so certificate
+		validity checks fail until the clock is set.
+
+config EXAMPLES_XIAOV_HEARTBEAT_MS
+	int "Daemon statistics heartbeat in milliseconds"
+	default 30000
+	range 5000 300000
+	---help---
+		How often "xiaov daemon" prints its counter block while idle. The
+		one-shot "xiaov service" path is unaffected. Needed for wake-word
+		bring-up: without it the KWS counters only appear when the run
+		ends, so there is no way to tell whether audio is reaching the
+		detector.
+
+config EXAMPLES_XIAOV_TURN_TIMEOUT_MS
+	int "Single voice turn timeout in milliseconds"
+	default 60000
+	range 10000 180000
+
+config EXAMPLES_XIAOV_CAPTURE_HANGOVER_MS
+	int "End-of-speech hangover in milliseconds"
+	default 2000
+	range 0 5000
+	---help---
+		How long the capture keeps running after the VAD stops reporting
+		speech. Zero reproduces the old behaviour of ending the turn on the
+		first silent frame, which cut talkers off at the pause between
+		words. The VAD itself already holds speech for 500 ms; this additional
+		2000 ms gives a slow speaker about 2.5 seconds of total pause tolerance
+		before the turn is closed.
+
+config EXAMPLES_XIAOV_MAX_CAPTURE_MS
+	int "Maximum microphone capture duration in milliseconds"
+	default 30000
+	range 5000 120000
+	---help---
+		Hard upper bound for one voice question. It remains independent from
+		the silence detector so sustained noise or speech cannot hold the
+		microphone forever. Thirty seconds leaves room for a natural long
+		question while bounding memory, network and cloud-ASR usage.
+
+config EXAMPLES_XIAOV_CONNECT_TIMEOUT_MS
+	int "One-shot gateway session timeout in milliseconds"
+	default 10000
+	range 1000 30000
+	---help---
+		The one-shot service waits for the WebSocket session.ready event
+		before starting microphone capture. This prevents the bounded PCM
+		queue from filling while a cold Wi-Fi/WebSocket connection is still
+		being established. The persistent daemon continues connecting in
+		the background while standby KWS runs.
+
+endif

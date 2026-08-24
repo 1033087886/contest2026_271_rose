@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xiaov-voice-assistant"
+version = "0.1.0"
+description = "Host-side gateway and portable device core for Xiao V on openvela"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+dependencies = [
+  "websockets>=15,<17",
+]
+
+[project.optional-dependencies]
+# Only needed to reach the hosted MiMo API; the mock chain and every test that
+# does not talk to MiMo run without it.
+mimo = ["httpx>=0.27,<1"]
+# HTTP client only; inference engines and model weights are deployed separately.
+speech = ["httpx>=0.27,<1"]
+# Native asyncio MQTT 3.1.1 client. Kept separate because most development and
+# all mock paths do not need a broker client.
+mqtt = ["gmqtt>=0.7,<1"]
+# A host C compiler for running the device core tests and the VAD tuner on
+# machines with no cc/gcc/clang, which is the common case on Windows.
+hostcc = ["ziglang>=0.13"]
+# Headless PhoenixSuit orchestration uses the existing serial console helpers.
+# The Win32 dialog controller itself is implemented with the standard library.
+flash = ["pyserial>=3.5,<4"]
+
+[project.scripts]
+xiaov-gateway = "gateway.server:main"
+xiaov-device-sim = "simulator.device:main"
+xiaov-benchmark = "simulator.benchmark:main"
+
+[tool.setuptools.packages.find]
+include = ["evaluation*", "gateway*", "simulator*"]
+
+[tool.unittest]
+start-directory = "tests"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

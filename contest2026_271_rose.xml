@@ -9,8 +9,7 @@
   <include name="openvela.xml"/>
 
   <project path="contest2026_271_rose" name="contest2026_271_rose">
-    <linkfile src="app/hello_app" dest="packages/demos/contest2026_271_hello_app"/>
-    <linkfile src="quickapp/hello_quickapp" dest="packages/apps/contest2026_271_hello_quickapp"/>
-    <linkfile src="board/contest_board" dest="vendor/openvela/boards/contest2026_271_board"/>
+    <linkfile src="app/xiaov_voice_assistant" dest="packages/demos/contest2026_271_xiaov_voice_assistant"/>
+    <linkfile src="board/r528s3-dshanpi" dest="vendor/openvela/boards/contest2026_271_xiaov_r528s3"/>
   </project>
 </manifest>
